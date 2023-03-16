@@ -1664,7 +1664,7 @@ void Stepper::pulse_phase_isr() {
 
   do {
     #define _APPLY_STEP(AXIS, INV, ALWAYS) AXIS ##_APPLY_STEP(INV, ALWAYS)
-    #define _STEP_STATE(AXIS) STEP_STATE_## AXIS
+    #define _INVERT_STEP_PIN(AXIS) INVERT_## AXIS ##_STEP_PIN
 
     // Determine if a pulse is needed using Bresenham
     #define PULSE_PREP(AXIS) do{ \
@@ -1714,14 +1714,14 @@ void Stepper::pulse_phase_isr() {
     #define PULSE_START(AXIS) do{ \
       if (step_needed[_AXIS(AXIS)]) { \
         count_position[_AXIS(AXIS)] += count_direction[_AXIS(AXIS)]; \
-        _APPLY_STEP(AXIS, _STEP_STATE(AXIS), 0); \
+        _APPLY_STEP(AXIS, !_INVERT_STEP_PIN(AXIS), 0); \
       } \
     }while(0)
 
     // Stop an active pulse if needed
     #define PULSE_STOP(AXIS) do { \
       if (step_needed[_AXIS(AXIS)]) { \
-        _APPLY_STEP(AXIS, !_STEP_STATE(AXIS), 0); \
+        _APPLY_STEP(AXIS, _INVERT_STEP_PIN(AXIS), 0); \
       } \
     }while(0)
 
@@ -1869,6 +1869,7 @@ void Stepper::pulse_phase_isr() {
             // don't actually step here, but do subtract movements steps
             // from the linear advance step count
             step_needed.e = false;
+            count_position.e -= count_direction.e;
             la_advance_steps--;
           }
         #endif
@@ -1932,7 +1933,7 @@ void Stepper::pulse_phase_isr() {
     #if ENABLED(MIXING_EXTRUDER)
       if (step_needed.e) {
         count_position[E_AXIS] += count_direction[E_AXIS];
-        E_STEP_WRITE(mixer.get_next_stepper(), STEP_STATE_E);
+        E_STEP_WRITE(mixer.get_next_stepper(), !INVERT_E_STEP_PIN);
       }
     #elif HAS_E0_STEP
       PULSE_START(E);
@@ -1976,7 +1977,7 @@ void Stepper::pulse_phase_isr() {
     #endif
 
     #if ENABLED(MIXING_EXTRUDER)
-      if (step_needed.e) E_STEP_WRITE(mixer.get_stepper(), !STEP_STATE_E);
+      if (step_needed.e) E_STEP_WRITE(mixer.get_stepper(), INVERT_E_STEP_PIN);
     #elif HAS_E0_STEP
       PULSE_STOP(E);
     #endif
@@ -2061,7 +2062,7 @@ uint32_t Stepper::calc_timer_interval(uint32_t step_rate) {
         const uint8_t rate_mod_256 = (step_rate & 0x00FF);
         const uintptr_t table_address = uintptr_t(&speed_lookuptable_fast[uint8_t(step_rate >> 8)][0]),
                         gain = uint16_t(pgm_read_word(table_address + 2));
-        return uint16_t(pgm_read_word(table_address)) - MultiU8X16toH16(rate_mod_256, gain);
+        return uint16_t(pgm_read_word(table_address)) - MultiU16X8toH16(rate_mod_256, gain);
       }
       else { // lower step rates
         uintptr_t table_address = uintptr_t(&speed_lookuptable_slow[0][0]);
@@ -2261,8 +2262,6 @@ uint32_t Stepper::block_phase_isr() {
                 DIR_WAIT_AFTER();
               }
             }
-            else
-              la_interval = LA_ADV_NEVER;
           }
         #endif // LIN_ADVANCE
 
@@ -2494,7 +2493,6 @@ uint32_t Stepper::block_phase_isr() {
         oversampling_factor = 0;                            // Assume no axis smoothing (via oversampling)
         // Decide if axis smoothing is possible
         uint32_t max_rate = current_block->nominal_rate;    // Get the step event rate
-        IF_ENABLED(DWIN_LCD_PROUI, if (HMI_data.AdaptiveStepSmoothing))
         while (max_rate < MIN_STEP_ISR_FREQUENCY) {         // As long as more ISRs are possible...
           max_rate <<= 1;                                   // Try to double the rate
           if (max_rate < MIN_STEP_ISR_FREQUENCY)            // Don't exceed the estimated ISR limit
@@ -2640,7 +2638,7 @@ uint32_t Stepper::block_phase_isr() {
       la_delta_error -= advance_divisor;
 
       // Set the STEP pulse ON
-      E_STEP_WRITE(TERN(MIXING_EXTRUDER, mixer.get_next_stepper(), stepper_extruder), STEP_STATE_E);
+      E_STEP_WRITE(TERN(MIXING_EXTRUDER, mixer.get_next_stepper(), stepper_extruder), !INVERT_E_STEP_PIN);
     }
 
     TERN_(I2S_STEPPER_STREAM, i2s_push_sample());
@@ -2654,7 +2652,7 @@ uint32_t Stepper::block_phase_isr() {
       #endif
 
       // Set the STEP pulse OFF
-      E_STEP_WRITE(TERN(MIXING_EXTRUDER, mixer.get_stepper(), stepper_extruder), !STEP_STATE_E);
+      E_STEP_WRITE(TERN(MIXING_EXTRUDER, mixer.get_stepper(), stepper_extruder), INVERT_E_STEP_PIN);
     }
   }
 
@@ -2778,44 +2776,35 @@ void Stepper::init() {
 
   // Init Enable Pins - steppers default to disabled.
   #if HAS_X_ENABLE
-    #ifndef X_ENABLE_INIT_STATE
-      #define X_ENABLE_INIT_STATE !X_ENABLE_ON
-    #endif
     X_ENABLE_INIT();
-    if (X_ENABLE_INIT_STATE) X_ENABLE_WRITE(X_ENABLE_INIT_STATE);
+    if (!X_ENABLE_ON) X_ENABLE_WRITE(HIGH);
     #if BOTH(HAS_X2_STEPPER, HAS_X2_ENABLE)
       X2_ENABLE_INIT();
-      if (X_ENABLE_INIT_STATE) X2_ENABLE_WRITE(X_ENABLE_INIT_STATE);
+      if (!X_ENABLE_ON) X2_ENABLE_WRITE(HIGH);
     #endif
   #endif
   #if HAS_Y_ENABLE
-    #ifndef Y_ENABLE_INIT_STATE
-      #define Y_ENABLE_INIT_STATE !Y_ENABLE_ON
-    #endif
     Y_ENABLE_INIT();
-    if (Y_ENABLE_INIT_STATE) Y_ENABLE_WRITE(Y_ENABLE_INIT_STATE);
+    if (!Y_ENABLE_ON) Y_ENABLE_WRITE(HIGH);
     #if BOTH(HAS_DUAL_Y_STEPPERS, HAS_Y2_ENABLE)
       Y2_ENABLE_INIT();
-      if (Y_ENABLE_INIT_STATE) Y2_ENABLE_WRITE(Y_ENABLE_INIT_STATE);
+      if (!Y_ENABLE_ON) Y2_ENABLE_WRITE(HIGH);
     #endif
   #endif
   #if HAS_Z_ENABLE
-    #ifndef Z_ENABLE_INIT_STATE
-      #define Z_ENABLE_INIT_STATE !Z_ENABLE_ON
-    #endif
     Z_ENABLE_INIT();
-    if (Z_ENABLE_INIT_STATE) Z_ENABLE_WRITE(Z_ENABLE_INIT_STATE);
+    if (!Z_ENABLE_ON) Z_ENABLE_WRITE(HIGH);
     #if NUM_Z_STEPPERS >= 2 && HAS_Z2_ENABLE
       Z2_ENABLE_INIT();
-      if (Z_ENABLE_INIT_STATE) Z2_ENABLE_WRITE(Z_ENABLE_INIT_STATE);
+      if (!Z_ENABLE_ON) Z2_ENABLE_WRITE(HIGH);
     #endif
     #if NUM_Z_STEPPERS >= 3 && HAS_Z3_ENABLE
       Z3_ENABLE_INIT();
-      if (Z_ENABLE_INIT_STATE) Z3_ENABLE_WRITE(Z_ENABLE_INIT_STATE);
+      if (!Z_ENABLE_ON) Z3_ENABLE_WRITE(HIGH);
     #endif
     #if NUM_Z_STEPPERS >= 4 && HAS_Z4_ENABLE
       Z4_ENABLE_INIT();
-      if (Z_ENABLE_INIT_STATE) Z4_ENABLE_WRITE(Z_ENABLE_INIT_STATE);
+      if (!Z_ENABLE_ON) Z4_ENABLE_WRITE(HIGH);
     #endif
   #endif
   #if HAS_I_ENABLE
@@ -2843,63 +2832,36 @@ void Stepper::init() {
     if (!W_ENABLE_ON) W_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E0_ENABLE
-    #ifndef E_ENABLE_INIT_STATE
-      #define E_ENABLE_INIT_STATE !E_ENABLE_ON
-    #endif
-    #ifndef E0_ENABLE_INIT_STATE
-      #define E0_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E0_ENABLE_INIT();
-    if (E0_ENABLE_INIT_STATE) E0_ENABLE_WRITE(E0_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E0_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E1_ENABLE
-    #ifndef E1_ENABLE_INIT_STATE
-      #define E1_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E1_ENABLE_INIT();
-    if (E1_ENABLE_INIT_STATE) E1_ENABLE_WRITE(E1_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E1_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E2_ENABLE
-    #ifndef E2_ENABLE_INIT_STATE
-      #define E2_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E2_ENABLE_INIT();
-    if (E2_ENABLE_INIT_STATE) E2_ENABLE_WRITE(E2_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E2_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E3_ENABLE
-    #ifndef E3_ENABLE_INIT_STATE
-      #define E3_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E3_ENABLE_INIT();
-    if (E3_ENABLE_INIT_STATE) E3_ENABLE_WRITE(E3_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E3_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E4_ENABLE
-    #ifndef E4_ENABLE_INIT_STATE
-      #define E4_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E4_ENABLE_INIT();
-    if (E4_ENABLE_INIT_STATE) E4_ENABLE_WRITE(E4_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E4_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E5_ENABLE
-    #ifndef E5_ENABLE_INIT_STATE
-      #define E5_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E5_ENABLE_INIT();
-    if (E5_ENABLE_INIT_STATE) E5_ENABLE_WRITE(E5_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E5_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E6_ENABLE
-    #ifndef E6_ENABLE_INIT_STATE
-      #define E6_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E6_ENABLE_INIT();
-    if (E6_ENABLE_INIT_STATE) E6_ENABLE_WRITE(E6_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E6_ENABLE_WRITE(HIGH);
   #endif
   #if HAS_E7_ENABLE
-    #ifndef E7_ENABLE_INIT_STATE
-      #define E7_ENABLE_INIT_STATE E_ENABLE_INIT_STATE
-    #endif
     E7_ENABLE_INIT();
-    if (E7_ENABLE_INIT_STATE) E7_ENABLE_WRITE(E7_ENABLE_INIT_STATE);
+    if (!E_ENABLE_ON) E7_ENABLE_WRITE(HIGH);
   #endif
 
   #define _STEP_INIT(AXIS) AXIS ##_STEP_INIT()
@@ -2908,7 +2870,7 @@ void Stepper::init() {
 
   #define AXIS_INIT(AXIS, PIN) \
     _STEP_INIT(AXIS); \
-    _WRITE_STEP(AXIS, !_STEP_STATE(PIN)); \
+    _WRITE_STEP(AXIS, _INVERT_STEP_PIN(PIN)); \
     _DISABLE_AXIS(AXIS)
 
   #define E_AXIS_INIT(NUM) AXIS_INIT(E## NUM, E)
@@ -2917,7 +2879,7 @@ void Stepper::init() {
   #if HAS_X_STEP
     #if HAS_X2_STEPPER
       X2_STEP_INIT();
-      X2_STEP_WRITE(!STEP_STATE_X);
+      X2_STEP_WRITE(INVERT_X_STEP_PIN);
     #endif
     AXIS_INIT(X, X);
   #endif
@@ -2925,7 +2887,7 @@ void Stepper::init() {
   #if HAS_Y_STEP
     #if HAS_DUAL_Y_STEPPERS
       Y2_STEP_INIT();
-      Y2_STEP_WRITE(!STEP_STATE_Y);
+      Y2_STEP_WRITE(INVERT_Y_STEP_PIN);
     #endif
     AXIS_INIT(Y, Y);
   #endif
@@ -2933,15 +2895,15 @@ void Stepper::init() {
   #if HAS_Z_STEP
     #if NUM_Z_STEPPERS >= 2
       Z2_STEP_INIT();
-      Z2_STEP_WRITE(!STEP_STATE_Z);
+      Z2_STEP_WRITE(INVERT_Z_STEP_PIN);
     #endif
     #if NUM_Z_STEPPERS >= 3
       Z3_STEP_INIT();
-      Z3_STEP_WRITE(!STEP_STATE_Z);
+      Z3_STEP_WRITE(INVERT_Z_STEP_PIN);
     #endif
     #if NUM_Z_STEPPERS >= 4
       Z4_STEP_INIT();
-      Z4_STEP_WRITE(!STEP_STATE_Z);
+      Z4_STEP_WRITE(INVERT_Z_STEP_PIN);
     #endif
     AXIS_INIT(Z, Z);
   #endif
@@ -3022,7 +2984,7 @@ void Stepper::init() {
    * Calculate a fixed point factor to apply to the signal and its echo
    * when shaping an axis.
    */
-  void Stepper::set_shaping_damping_ratio(const AxisEnum axis, const_float_t zeta) {
+  void Stepper::set_shaping_damping_ratio(const AxisEnum axis, const float zeta) {
     // from the damping ratio, get a factor that can be applied to advance_dividend for fixed point maths
     // for ZV, we use amplitudes 1/(1+K) and K/(1+K) where K = exp(-zeta * M_PI / sqrt(1.0f - zeta * zeta))
     // which can be converted to 1:7 fixed point with an excellent fit with a 3rd order polynomial
@@ -3031,9 +2993,9 @@ void Stepper::init() {
     else if (zeta >= 1.0f) factor2 = 0.0f;
     else {
       factor2 = 64.44056192 + -99.02008832 * zeta;
-      const_float_t zeta2 = zeta * zeta;
+      const float zeta2 = zeta * zeta;
       factor2 += -7.58095488 * zeta2;
-      const_float_t zeta3 = zeta2 * zeta;
+      const float zeta3 = zeta2 * zeta;
       factor2 += 43.073216 * zeta3;
       factor2 = floor(factor2);
     }
@@ -3051,9 +3013,9 @@ void Stepper::init() {
     return -1;
   }
 
-  void Stepper::set_shaping_frequency(const AxisEnum axis, const_float_t freq) {
+  void Stepper::set_shaping_frequency(const AxisEnum axis, const float freq) {
     // enabling or disabling shaping whilst moving can result in lost steps
-    planner.synchronize();
+    Planner::synchronize();
 
     const bool was_on = hal.isr_state();
     hal.isr_off();
@@ -3340,19 +3302,19 @@ void Stepper::report_positions() {
 
   #if DISABLED(DELTA)
 
-    #define BABYSTEP_AXIS(AXIS, INV, DIR) do{      \
-      const uint8_t old_dir = _READ_DIR(AXIS);     \
-      _ENABLE_AXIS(AXIS);                          \
-      DIR_WAIT_BEFORE();                           \
-      _APPLY_DIR(AXIS, _INVERT_DIR(AXIS)^DIR^INV); \
-      DIR_WAIT_AFTER();                            \
-      _SAVE_START();                               \
-      _APPLY_STEP(AXIS, _STEP_STATE(AXIS), true);  \
-      _PULSE_WAIT();                               \
-      _APPLY_STEP(AXIS, !_STEP_STATE(AXIS), true); \
-      EXTRA_DIR_WAIT_BEFORE();                     \
-      _APPLY_DIR(AXIS, old_dir);                   \
-      EXTRA_DIR_WAIT_AFTER();                      \
+    #define BABYSTEP_AXIS(AXIS, INV, DIR) do{           \
+      const uint8_t old_dir = _READ_DIR(AXIS);          \
+      _ENABLE_AXIS(AXIS);                               \
+      DIR_WAIT_BEFORE();                                \
+      _APPLY_DIR(AXIS, _INVERT_DIR(AXIS)^DIR^INV);      \
+      DIR_WAIT_AFTER();                                 \
+      _SAVE_START();                                    \
+      _APPLY_STEP(AXIS, !_INVERT_STEP_PIN(AXIS), true); \
+      _PULSE_WAIT();                                    \
+      _APPLY_STEP(AXIS, _INVERT_STEP_PIN(AXIS), true);  \
+      EXTRA_DIR_WAIT_BEFORE();                          \
+      _APPLY_DIR(AXIS, old_dir);                        \
+      EXTRA_DIR_WAIT_AFTER();                           \
     }while(0)
 
   #endif
@@ -3367,11 +3329,11 @@ void Stepper::report_positions() {
       _APPLY_DIR(B, _INVERT_DIR(B)^DIR^INV^ALT);                \
       DIR_WAIT_AFTER();                                         \
       _SAVE_START();                                            \
-      _APPLY_STEP(A, _STEP_STATE(A), true);                     \
-      _APPLY_STEP(B, _STEP_STATE(B), true);                     \
+      _APPLY_STEP(A, !_INVERT_STEP_PIN(A), true);               \
+      _APPLY_STEP(B, !_INVERT_STEP_PIN(B), true);               \
       _PULSE_WAIT();                                            \
-      _APPLY_STEP(A, !_STEP_STATE(A), true);                    \
-      _APPLY_STEP(B, !_STEP_STATE(B), true);                    \
+      _APPLY_STEP(A, _INVERT_STEP_PIN(A), true);                \
+      _APPLY_STEP(B, _INVERT_STEP_PIN(B), true);                \
       EXTRA_DIR_WAIT_BEFORE();                                  \
       _APPLY_DIR(A, old_dir.a); _APPLY_DIR(B, old_dir.b);       \
       EXTRA_DIR_WAIT_AFTER();                                   \
@@ -3468,58 +3430,58 @@ void Stepper::report_positions() {
 
           _SAVE_START();
 
-          X_STEP_WRITE(STEP_STATE_X);
+          X_STEP_WRITE(!INVERT_X_STEP_PIN);
           #ifdef Y_STEP_WRITE
-            Y_STEP_WRITE(STEP_STATE_Y);
+            Y_STEP_WRITE(!INVERT_Y_STEP_PIN);
           #endif
           #ifdef Z_STEP_WRITE
-            Z_STEP_WRITE(STEP_STATE_Z);
+            Z_STEP_WRITE(!INVERT_Z_STEP_PIN);
           #endif
           #ifdef I_STEP_WRITE
-            I_STEP_WRITE(STEP_STATE_I);
+            I_STEP_WRITE(!INVERT_I_STEP_PIN);
           #endif
           #ifdef J_STEP_WRITE
-            J_STEP_WRITE(STEP_STATE_J);
+            J_STEP_WRITE(!INVERT_J_STEP_PIN);
           #endif
           #ifdef K_STEP_WRITE
-            K_STEP_WRITE(STEP_STATE_K);
+            K_STEP_WRITE(!INVERT_K_STEP_PIN);
           #endif
           #ifdef U_STEP_WRITE
-            U_STEP_WRITE(STEP_STATE_U);
+            U_STEP_WRITE(!INVERT_U_STEP_PIN);
           #endif
           #ifdef V_STEP_WRITE
-            V_STEP_WRITE(STEP_STATE_V);
+            V_STEP_WRITE(!INVERT_V_STEP_PIN);
           #endif
           #ifdef W_STEP_WRITE
-            W_STEP_WRITE(STEP_STATE_W);
+            W_STEP_WRITE(!INVERT_W_STEP_PIN);
           #endif
 
           _PULSE_WAIT();
 
-          X_STEP_WRITE(!STEP_STATE_X);
+          X_STEP_WRITE(INVERT_X_STEP_PIN);
           #ifdef Y_STEP_WRITE
-            Y_STEP_WRITE(!STEP_STATE_Y);
+            Y_STEP_WRITE(INVERT_Y_STEP_PIN);
           #endif
           #ifdef Z_STEP_WRITE
-            Z_STEP_WRITE(!STEP_STATE_Z);
+            Z_STEP_WRITE(INVERT_Z_STEP_PIN);
           #endif
           #ifdef I_STEP_WRITE
-            I_STEP_WRITE(!STEP_STATE_I);
+            I_STEP_WRITE(INVERT_I_STEP_PIN);
           #endif
           #ifdef J_STEP_WRITE
-            J_STEP_WRITE(!STEP_STATE_J);
+            J_STEP_WRITE(INVERT_J_STEP_PIN);
           #endif
           #ifdef K_STEP_WRITE
-            K_STEP_WRITE(!STEP_STATE_K);
+            K_STEP_WRITE(INVERT_K_STEP_PIN);
           #endif
           #ifdef U_STEP_WRITE
-            U_STEP_WRITE(!STEP_STATE_U);
+            U_STEP_WRITE(INVERT_U_STEP_PIN);
           #endif
            #ifdef V_STEP_WRITE
-            V_STEP_WRITE(!STEP_STATE_V);
+            V_STEP_WRITE(INVERT_V_STEP_PIN);
           #endif
           #ifdef W_STEP_WRITE
-            W_STEP_WRITE(!STEP_STATE_W);
+            W_STEP_WRITE(INVERT_W_STEP_PIN);
           #endif
 
           // Restore direction bits

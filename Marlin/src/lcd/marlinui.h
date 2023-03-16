@@ -84,10 +84,9 @@ typedef bool (*statusResetFunc_t)();
 
 #endif // HAS_WIRED_LCD
 
-#if HAS_WIRED_LCD
+#if EITHER(HAS_WIRED_LCD, DWIN_CREALITY_LCD_JYERSUI)
   #define LCD_WITH_BLINK 1
   #define LCD_UPDATE_INTERVAL TERN(HAS_TOUCH_BUTTONS, 50, 100)
-
 #endif
 
 #if HAS_MARLINUI_U8GLIB
@@ -335,7 +334,7 @@ public:
       FORCE_INLINE static uint16_t get_progress_permyriad() { return _get_progress(); }
     #endif
     static uint8_t get_progress_percent() { return uint8_t(_get_progress() / (PROGRESS_SCALE)); }
-    #if LCD_WITH_BLINK && HAS_EXTRA_PROGRESS
+    #if LCD_WITH_BLINK
       #if ENABLED(SHOW_PROGRESS_PERCENT)
         static void drawPercent();
       #endif
@@ -349,8 +348,6 @@ public:
         static void drawInter();
       #endif
       static void rotate_progress();
-    #else
-      static void rotate_progress() {}
     #endif
   #else
     static constexpr uint8_t get_progress_percent() { return 0; }
@@ -507,7 +504,7 @@ public:
       static bool old_is_printing;
     #endif
 
-    #if EITHER(BABYSTEP_GFX_OVERLAY, MESH_EDIT_GFX_OVERLAY)
+    #if EITHER(BABYSTEP_ZPROBE_GFX_OVERLAY, MESH_EDIT_GFX_OVERLAY)
       static void zoffset_overlay(const int8_t dir);
       static void zoffset_overlay(const_float_t zvalue);
     #endif
@@ -650,7 +647,7 @@ public:
     static bool use_click() { return false; }
   #endif
 
-  #if ENABLED(ADVANCED_PAUSE_FEATURE) && ANY(HAS_MARLINUI_MENU, EXTENSIBLE_UI, DWIN_LCD_PROUI)
+  #if ENABLED(ADVANCED_PAUSE_FEATURE) && ANY(HAS_MARLINUI_MENU, EXTENSIBLE_UI, DWIN_LCD_PROUI, DWIN_CREALITY_LCD_JYERSUI)
     static void pause_show_message(const PauseMessage message, const PauseMode mode=PAUSE_MODE_SAME, const uint8_t extruder=active_extruder);
   #else
     static void _pause_show_message() {}

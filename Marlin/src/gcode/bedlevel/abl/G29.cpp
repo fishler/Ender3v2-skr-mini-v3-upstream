@@ -110,7 +110,7 @@ public:
   #elif ENABLED(AUTO_BED_LEVELING_3POINT)
     static constexpr int abl_points = 3;
   #elif ABL_USES_GRID
-    TERN(ProUIex, const, static constexpr) int abl_points = GRID_MAX_POINTS;
+    static constexpr int abl_points = GRID_MAX_POINTS;
   #endif
 
   #if ABL_USES_GRID
@@ -126,11 +126,7 @@ public:
       bool                topography_map;
       xy_uint8_t          grid_points;
     #else // Bilinear
-      #if ProUIex
-        xy_uint8_t grid_points = { GRID_MAX_POINTS_X, GRID_MAX_POINTS_Y };
-      #else
-        static constexpr xy_uint8_t grid_points = { GRID_MAX_POINTS_X, GRID_MAX_POINTS_Y };
-      #endif
+      static constexpr xy_uint8_t grid_points = { GRID_MAX_POINTS_X, GRID_MAX_POINTS_Y };
     #endif
 
     #if ENABLED(AUTO_BED_LEVELING_BILINEAR)
@@ -148,10 +144,8 @@ public:
 };
 
 #if ABL_USES_GRID && EITHER(AUTO_BED_LEVELING_3POINT, AUTO_BED_LEVELING_BILINEAR)
-  #if !ProUIex
-    constexpr xy_uint8_t G29_State::grid_points;
-    constexpr int G29_State::abl_points;
-  #endif
+  constexpr xy_uint8_t G29_State::grid_points;
+  constexpr int G29_State::abl_points;
 #endif
 
 /**
@@ -459,7 +453,9 @@ G29_TYPE GcodeSuite::G29() {
     }
 
     // Position bed horizontally and Z probe vertically.
-    #if HAS_SAFE_BED_LEVELING
+    #if    defined(SAFE_BED_LEVELING_START_X) || defined(SAFE_BED_LEVELING_START_Y) || defined(SAFE_BED_LEVELING_START_Z) \
+        || defined(SAFE_BED_LEVELING_START_I) || defined(SAFE_BED_LEVELING_START_J) || defined(SAFE_BED_LEVELING_START_K) \
+        || defined(SAFE_BED_LEVELING_START_U) || defined(SAFE_BED_LEVELING_START_V) || defined(SAFE_BED_LEVELING_START_W)
       xyze_pos_t safe_position = current_position;
       #ifdef SAFE_BED_LEVELING_START_X
         safe_position.x = SAFE_BED_LEVELING_START_X;
@@ -490,7 +486,7 @@ G29_TYPE GcodeSuite::G29() {
       #endif
 
       do_blocking_move_to(safe_position);
-    #endif // HAS_SAFE_BED_LEVELING
+    #endif
 
     // Disable auto bed leveling during G29.
     // Be formal so G29 can be done successively without G28.
@@ -683,8 +679,6 @@ G29_TYPE GcodeSuite::G29() {
 
         int8_t inStart, inStop, inInc;
 
-        TERN_(ProUIex, if (ProEx.QuitLeveling()) break; )
-
         if (zig) {                      // Zig away from origin
           inStart = 0;                  // Left or front
           inStop = PR_INNER_SIZE;       // Right or back
@@ -737,13 +731,11 @@ G29_TYPE GcodeSuite::G29() {
             const float z = abl.measured_z + abl.Z_offset;
             abl.z_values[abl.meshCount.x][abl.meshCount.y] = z;
             TERN_(EXTENSIBLE_UI, ExtUI::onMeshUpdate(abl.meshCount, z));
-            TERN_(ProUIex, ProEx.MeshUpdate(abl.meshCount.x, abl.meshCount.y, z));
 
           #endif
 
           abl.reenable = false; // Don't re-enable after modifying the mesh
           idle_no_sleep();
-          TERN_(ProUIex, if (ProEx.QuitLeveling()) break; )
 
         } // inner
       } // outer

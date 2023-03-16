@@ -24,7 +24,7 @@
 
 #include "../MarlinCore.h" // for printingIsPaused
 
-#if LED_POWEROFF_TIMEOUT > 0 || BOTH(HAS_WIRED_LCD, PRINTER_EVENT_LEDS) || (defined(LCD_BACKLIGHT_TIMEOUT_MINS) && defined(NEOPIXEL_BKGD_INDEX_FIRST))
+#if LED_POWEROFF_TIMEOUT > 0 || BOTH(HAS_WIRED_LCD, PRINTER_EVENT_LEDS)
   #include "../feature/leds/leds.h"
 #endif
 
@@ -49,6 +49,8 @@ MarlinUI ui;
   #include "e3v2/creality/dwin.h"
 #elif ENABLED(DWIN_LCD_PROUI)
   #include "e3v2/proui/dwin.h"
+#elif ENABLED(DWIN_CREALITY_LCD_JYERSUI)
+  #include "e3v2/jyersui/dwin.h"
 #endif
 
 #if ENABLED(LCD_PROGRESS_BAR) && !IS_TFTGLCD_PANEL
@@ -147,7 +149,7 @@ constexpr uint8_t epps = ENCODER_PULSES_PER_STEP;
     const preheat_t &pre = material_preset[m];
     TERN_(HAS_HOTEND,           if (TEST(pmask, PT_HOTEND))  thermalManager.setTargetHotend(pre.hotend_temp, e));
     TERN_(HAS_HEATED_BED,       if (TEST(pmask, PT_BED))     thermalManager.setTargetBed(pre.bed_temp));
-    //TERN_(HAS_HEATED_CHAMBER, if (TEST(pmask, PT_CHAMBER)) thermalManager.setTargetChamber(pre.chamber_temp));
+    //TERN_(HAS_HEATED_CHAMBER, if (TEST(pmask, PT_CHAMBER)) thermalManager.setTargetBed(pre.chamber_temp));
     TERN_(HAS_FAN,              if (TEST(pmask, PT_FAN))     thermalManager.set_fan_speed(0, pre.fan_speed));
   }
 #endif
@@ -184,17 +186,12 @@ constexpr uint8_t epps = ENCODER_PULSES_PER_STEP;
 #if LCD_BACKLIGHT_TIMEOUT_MINS
 
   constexpr uint8_t MarlinUI::backlight_timeout_min, MarlinUI::backlight_timeout_max;
+
   uint8_t MarlinUI::backlight_timeout_minutes; // Initialized by settings.load()
   millis_t MarlinUI::backlight_off_ms = 0;
-
   void MarlinUI::refresh_backlight_timeout() {
     backlight_off_ms = backlight_timeout_minutes ? millis() + backlight_timeout_minutes * 60UL * 1000UL : 0;
-    #ifdef NEOPIXEL_BKGD_INDEX_FIRST
-      neo.reset_background_color();
-      neo.show();
-    #elif PIN_EXISTS(LCD_BACKLIGHT)
-      WRITE(LCD_BACKLIGHT_PIN, HIGH);
-    #endif
+    WRITE(LCD_BACKLIGHT_PIN, HIGH);
   }
 
 #elif HAS_DISPLAY_SLEEP
@@ -836,7 +833,7 @@ void MarlinUI::init() {
           // Apply a linear offset to a single axis
           if (axis == ALL_AXES_ENUM)
             destination = all_axes_destination;
-          else if (axis <= LOGICAL_AXES) {
+          else if (axis <= XYZE) {
             destination = current_position;
             destination[axis] += offset;
           }
@@ -1199,14 +1196,8 @@ void MarlinUI::init() {
       #endif
 
       #if LCD_BACKLIGHT_TIMEOUT_MINS
-
         if (backlight_off_ms && ELAPSED(ms, backlight_off_ms)) {
-          #ifdef NEOPIXEL_BKGD_INDEX_FIRST
-            neo.set_background_off();
-            neo.show();
-          #elif PIN_EXIST(LCD_BACKLIGHT)
-            WRITE(LCD_BACKLIGHT_PIN, LOW); // Backlight off
-          #endif
+          WRITE(LCD_BACKLIGHT_PIN, LOW); // Backlight off
           backlight_off_ms = 0;
         }
       #elif HAS_DISPLAY_SLEEP
@@ -1482,7 +1473,7 @@ void MarlinUI::init() {
     FSTR_P msg;
     if (printingIsPaused())
       msg = GET_TEXT_F(MSG_PRINT_PAUSED);
-    #if ENABLED(SDSUPPORT) && DISABLED(DWIN_LCD_PROUI)
+    #if ENABLED(SDSUPPORT)
       else if (IS_SD_PRINTING())
         return set_status(card.longest_filename(), true);
     #endif
@@ -1603,6 +1594,7 @@ void MarlinUI::init() {
     TERN_(EXTENSIBLE_UI, ExtUI::onStatusChanged(status_message));
     TERN_(DWIN_CREALITY_LCD, DWIN_StatusChanged(status_message));
     TERN_(DWIN_LCD_PROUI, DWIN_CheckStatusMessage());
+    TERN_(DWIN_CREALITY_LCD_JYERSUI, CrealityDWIN.Update_Status(status_message));
   }
 
   #if ENABLED(STATUS_MESSAGE_SCROLLING)
@@ -1658,7 +1650,6 @@ void MarlinUI::init() {
     TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_open(PROMPT_INFO, F("UI Aborted"), FPSTR(DISMISS_STR)));
     LCD_MESSAGE(MSG_PRINT_ABORTED);
     TERN_(HAS_MARLINUI_MENU, return_to_status());
-    TERN_(DWIN_LCD_PROUI, HMI_flag.abort_flag = true);
   }
 
   #if BOTH(HAS_MARLINUI_MENU, PSU_CONTROL)
@@ -1751,11 +1742,9 @@ void MarlinUI::init() {
     );
   }
 
-  #if LCD_WITH_BLINK && HAS_EXTRA_PROGRESS
-
-    // Renew and redraw all enabled progress strings
-    void MarlinUI::rotate_progress() {
-      typedef void (*PrintProgress_t)();
+  #if LCD_WITH_BLINK && DISABLED(HAS_GRAPHICAL_TFT)
+    typedef void (*PrintProgress_t)();
+    void MarlinUI::rotate_progress() { // Renew and redraw all enabled progress strings
       const PrintProgress_t progFunc[] = {
         OPTITEM(SHOW_PROGRESS_PERCENT, drawPercent)
         OPTITEM(SHOW_ELAPSED_TIME, drawElapsed)
@@ -1770,8 +1759,7 @@ void MarlinUI::init() {
         (*progFunc[i])();
       }
     }
-
-  #endif // LCD_WITH_BLINK && HAS_EXTRA_PROGRESS
+  #endif
 
 #endif // HAS_PRINT_PROGRESS
 
@@ -1839,7 +1827,7 @@ void MarlinUI::init() {
     #endif
   }
 
-  #if EITHER(BABYSTEP_GFX_OVERLAY, MESH_EDIT_GFX_OVERLAY)
+  #if EITHER(BABYSTEP_ZPROBE_GFX_OVERLAY, MESH_EDIT_GFX_OVERLAY)
     void MarlinUI::zoffset_overlay(const_float_t zvalue) {
       // Determine whether the user is raising or lowering the nozzle.
       static int8_t dir;

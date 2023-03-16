@@ -1,12 +1,13 @@
 /**
- * DWIN End Stops diagnostic page for PRO UI
- * Author: Miguel A. Risco-Castillo (MRISCOC)
- * Version: 1.3.3
- * Date: 2022/10/07
+ * Marlin 3D Printer Firmware
+ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ *
+ * Based on Sprinter and grbl.
+ * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Lesser General Public License as
- * published by the Free Software Foundation, either version 3 of the License, or
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
@@ -14,21 +15,34 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU Lesser General Public License
+ * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
 
+/**
+ * DWIN Endstops diagnostic page for PRO UI
+ * Author: Miguel A. Risco-Castillo (MRISCOC)
+ * Version: 1.2.2
+ * Date: 2022/02/24
+ */
+
 #include "../../../inc/MarlinConfigPre.h"
 
-#if BOTH(DWIN_LCD_PROUI, HAS_ESDIAG)
+#if ENABLED(DWIN_LCD_PROUI)
+
+#include "dwin_defines.h"
+
+#if HAS_ESDIAG
 
 #include "endstop_diag.h"
 
 #include "../../../core/types.h"
 #include "../../marlinui.h"
-#include "dwin.h"
+#include "dwin_lcd.h"
+#include "dwinui.h"
 #include "dwin_popup.h"
+#include "dwin.h"
 
 #if HAS_FILAMENT_SENSOR
   #include "../../../feature/runout.h"
@@ -50,7 +64,7 @@ void draw_es_label(FSTR_P const flabel=nullptr) {
 void draw_es_state(const bool is_hit) {
   const uint8_t LM = 130;
   DWINUI::cursor.x = LM;
-  DWIN_Draw_Rectangle(1, HMI_data.PopupBg_Color, LM, DWINUI::cursor.y, LM + 100, DWINUI::cursor.y + 20);
+  DWIN_Draw_Rectangle(1, HMI_data.PopupBg_color, LM, DWINUI::cursor.y, LM + 100, DWINUI::cursor.y + 20);
   is_hit ? DWINUI::Draw_String(RGB(31,31,16), F(STR_ENDSTOP_HIT)) : DWINUI::Draw_String(RGB(16,63,16), F(STR_ENDSTOP_OPEN));
   DWINUI::MoveBy(0, 25);
 }
@@ -90,13 +104,10 @@ void ESDiagClass::Update() {
     ES_REPORT(Z_MIN);
   #endif
   #if HAS_FILAMENT_SENSOR
-    #if ProUIex
-      draw_es_state(!FilamentSensorDevice::poll_runout_state(0));
-    #else
-      draw_es_state(READ(FIL_RUNOUT1_PIN) != FIL_RUNOUT1_STATE);
-    #endif
+    draw_es_state(READ(FIL_RUNOUT1_PIN) != FIL_RUNOUT1_STATE);
   #endif
   DWIN_UpdateLCD();
 }
 
-#endif // DWIN_LCD_PROUI && HAS_ESDIAG
+#endif // HAS_ESDIAG
+#endif // DWIN_LCD_PROUI

@@ -71,10 +71,6 @@ GcodeSuite gcode;
 
 #include "../MarlinCore.h" // for idle, kill
 
-#if ENABLED(DWIN_LCD_PROUI)
-  #include "../lcd/e3v2/proui/dwin.h"
-#endif
-
 // Inactivity shutdown
 millis_t GcodeSuite::previous_move_ms = 0,
          GcodeSuite::max_inactive_time = 0;
@@ -302,27 +298,25 @@ void GcodeSuite::dwell(millis_t time) {
     #define G29_MAX_RETRIES 0
   #endif
 
-  #if !ProUIex
-    void GcodeSuite::G29_with_retry() {
-      uint8_t retries = G29_MAX_RETRIES;
-      while (G29()) { // G29 should return true for failed probes ONLY
-        if (retries) {
-          event_probe_recover();
-          --retries;
-        }
-        else {
-          event_probe_failure();
-          return;
-        }
+  void GcodeSuite::G29_with_retry() {
+    uint8_t retries = G29_MAX_RETRIES;
+    while (G29()) { // G29 should return true for failed probes ONLY
+      if (retries) {
+        event_probe_recover();
+        --retries;
       }
-
-      TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_end());
-
-      #ifdef G29_SUCCESS_COMMANDS
-        process_subcommands_now(F(G29_SUCCESS_COMMANDS));
-      #endif
+      else {
+        event_probe_failure();
+        return;
+      }
     }
-  #endif
+
+    TERN_(HOST_PROMPT_SUPPORT, hostui.prompt_end());
+
+    #ifdef G29_SUCCESS_COMMANDS
+      process_subcommands_now(F(G29_SUCCESS_COMMANDS));
+    #endif
+  }
 
 #endif // G29_RETRY_AND_RECOVER
 
@@ -1087,7 +1081,7 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
         case 1001: M1001(); break;                                // M1001: [INTERNAL] Handle SD completion
       #endif
 
-      #if DGUS_LCD_UI_MKS
+      #if ENABLED(DGUS_LCD_UI_MKS)
         case 1002: M1002(); break;                                // M1002: [INTERNAL] Tool-change and Relative E Move
       #endif
 
@@ -1115,10 +1109,6 @@ void GcodeSuite::process_parsed_command(const bool no_ok/*=false*/) {
 
     #if ENABLED(REALTIME_REPORTING_COMMANDS)
       case 'S': case 'P': case 'R': break;                        // Invalid S, P, R commands already filtered
-    #endif
-
-    #if BOTH(DWIN_LCD_PROUI, HAS_CGCODE)
-      case 'C' : DWIN_Gcode(parser.codenum); break;               // ProUIex Cn: Custom Gcodes
     #endif
 
     default:
