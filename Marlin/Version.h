@@ -28,7 +28,7 @@
 /**
  * Marlin release version identifier
  */
-#define SHORT_BUILD_VERSION "Fishler v1-Octoprint"
+#define SHORT_BUILD_VERSION "Fishler v1"
 
 /**
  * Verbose version identifier which should contain a reference to the location
